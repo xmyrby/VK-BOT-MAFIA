@@ -22,12 +22,227 @@ namespace VK_BOT_INSPECTOR
         static MySqlConnection connection;
         static MySqlCommand command;
 
+        static void CheckGame(int id)
+        {
+            int count = 0, mcount = 0;
+            command.CommandText = $"SELECT COUNT(*) as `count` FROM `players` WHERE `lobbyid` = {id} AND `role` != 'Мафия'";
+            MySqlDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                count = reader.GetInt32("count");
+            }
+            reader.Close();
+
+            command.CommandText = $"SELECT COUNT(*) as `mcount` FROM `players` WHERE `lobbyid` = {id} AND `role` = 'Мафия'";
+            reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                mcount = reader.GetInt32("mcount");
+            }
+            reader.Close();
+
+            if (count <= 1 && mcount >= 1)
+            {
+                long mafiaId = 0;
+                command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid` = {id} AND `role` = 'Мафия'";
+                reader = command.ExecuteReader();
+
+                while (reader.Read())
+                {
+                    mafiaId = reader.GetInt64("id");
+                }
+                reader.Close();
+                SendLobbyMessage(id, $"🤵 Победа мафии! Ею был @id{mafiaId} ({GetVkName(mafiaId)})", true);
+                command.CommandText = $"UPDATE `players` SET `lobbyid`=0, `inlobby`=0 WHERE `lobbyid`={id};DELETE FROM `lobbies` WHERE `id` = {id}";
+                command.ExecuteNonQuery();
+            }
+            else if (mcount < 1)
+            {
+                SendLobbyMessage(id, $"👦 Победа мирных жителей!", true);
+                command.CommandText = $"UPDATE `players` SET `lobbyid`=0, `inlobby`=0 WHERE `lobbyid`={id};DELETE FROM `lobbies` WHERE `id` = {id}";
+                command.ExecuteNonQuery();
+            }
+        }
+
+        static string NightEnd(int id)
+        {
+            string answer = "🌙 Этой ночью\n";
+
+            command.CommandText = $"SELECT `id`,`state`,`role` FROM `players` WHERE `state`!=0 AND `lobbyid`={id}";
+            MySqlDataReader reader = command.ExecuteReader();
+
+            long died = 0;
+
+            while (reader.Read())
+            {
+                long playerId = reader.GetInt64("id");
+                int state = reader.GetInt16("state");
+                if (state % 100 == 1)
+                {
+                    answer += $"🔫 @id{playerId} ({GetVkName(playerId)}) был застрелен, его роль: {reader.GetString("role")}\n";
+                    died = playerId;
+                }
+                else if (state % 100 == 11)
+                {
+                    answer += $"👻 @id{playerId} ({GetVkName(playerId)}) был вылечен после выстрела в голову\n";
+                }
+                else if (state % 100 == 10)
+                {
+                    answer += $"💚 @id{playerId} ({GetVkName(playerId)}) съел таблетки, но зря\n";
+                }
+                if (state / 100 >= 1)
+                {
+                    answer += $"💘 @id{playerId} ({GetVkName(playerId)}) встретил свою любовь, лишаясь возможности голосовать\n";
+                }
+            }
+            reader.Close();
+
+            if (died != 0)
+            {
+                LeaveFromLobby(id, died);
+                KeyboardBuilder keyboard = new KeyboardBuilder();
+                keyboard.AddButton(new AddButtonParams { Label = "Найти лобби", Color = KeyboardButtonColor.Positive });
+                keyboard.AddLine();
+                keyboard.AddButton(new AddButtonParams { Label = "Создать лобби", Color = KeyboardButtonColor.Primary });
+                keyboard.SetOneTime();
+
+                SendMessage(died, "🔫 Тебя застрелили, но ты можешь сыграть еще", keyboard.Build());
+            }
+
+            CheckGame(id);
+
+            return answer;
+        }
+
+        static void SendLobbyMessage(int id, string message, bool end)
+        {
+            command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid` = {id}";
+            MySqlDataReader reader = command.ExecuteReader();
+
+            KeyboardBuilder keyboard = new KeyboardBuilder();
+            keyboard.Clear();
+
+            if (end)
+            {
+                keyboard.AddButton(new AddButtonParams { Label = "Найти лобби", Color = KeyboardButtonColor.Positive });
+                keyboard.AddLine();
+                keyboard.AddButton(new AddButtonParams { Label = "Создать лобби", Color = KeyboardButtonColor.Primary });
+                keyboard.SetOneTime();
+            }
+
+            while (reader.Read())
+            {
+                SendMessage(reader.GetInt64("id"), message, keyboard.Build());
+            }
+            reader.Close();
+        }
+
+        static void CheckVote(int id)
+        {
+            command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `vote`=0 AND `state`<100";
+            MySqlDataReader reader = command.ExecuteReader();
+
+            if (reader.HasRows)
+            {
+                reader.Close();
+            }
+            else
+            {
+                reader.Close();
+
+                command.CommandText = $"SELECT `vote` FROM `players` WHERE `lobbyid`={id}";
+                reader = command.ExecuteReader();
+
+                List<long> voteIds = new List<long>();
+
+                while (reader.Read())
+                {
+                    voteIds.Add(reader.GetInt64("vote"));
+                }
+                reader.Close();
+
+                int max = 0;
+                long voted = 0;
+                int count;
+                long votedId = 0;
+                for (int i = 0; i < voteIds.Count; i++)
+                {
+                    count = 1;
+                    voted = voteIds[i];
+                    for (int j = 0; j < voteIds.Count - i - 1; j++)
+                    {
+                        if (voteIds[i + j + 1] == voted)
+                        {
+                            count++;
+                        }
+                        if (count > max)
+                        {
+                            max = count;
+                            votedId = voted;
+                        }
+                    }
+                }
+
+                string role = GetPlayer(votedId).Role;
+
+                SendLobbyMessage(id, $"💥 @id{votedId} ({GetVkName(votedId)}) был казнён, его роль: {role} ({max} Проголосовали)", false);
+
+                LeaveFromLobby(id, votedId);
+
+                KeyboardBuilder keyboard = new KeyboardBuilder();
+                keyboard.AddButton(new AddButtonParams { Label = "Найти лобби", Color = KeyboardButtonColor.Positive });
+                keyboard.AddLine();
+                keyboard.AddButton(new AddButtonParams { Label = "Создать лобби", Color = KeyboardButtonColor.Primary });
+                keyboard.SetOneTime();
+
+                SendMessage(votedId, "💥 Тебя казнили, но ты можешь сыграть еще", keyboard.Build());
+
+                CheckGame(id);
+
+                SendLobbyMessage(id, "🌙 Ночь начинается!", false);
+                command.CommandText = $"UPDATE `lobbies` SET `stage`=1 WHERE `id`={id}";
+                command.ExecuteNonQuery();
+                UpdateStage(id, 1);
+
+                command.CommandText = $"UPDATE `players` SET `vote` =0, `state`=0 WHERE `lobbyid` = {id};UPDATE `lobbies` SET `stage`=1 WHERE `id`={id}";
+                command.ExecuteNonQuery();
+            }
+        }
+
         static string GetStagePlayers(long playerId, int type, int id)
         {
-            if(type==0)
+            switch (type)
             {
-                command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id`!={playerId}";
+                case 0:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id`!={playerId}";
+                        break;
+                    }
+                case 1:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id}";
+                        break;
+                    }
+                case 2:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id`!={playerId}";
+                        break;
+                    }
+                case 3:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id`!={playerId}";
+                        break;
+                    }
+                case 4:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id`!={playerId}";
+                        break;
+                    }
+                default: break;
             }
+
             MySqlDataReader reader = command.ExecuteReader();
             string answer = "👥 Список доступных игроков:\n";
 
@@ -44,11 +259,36 @@ namespace VK_BOT_INSPECTOR
         {
             KeyboardBuilder keyboard = new KeyboardBuilder();
 
-            if (type == 0)
+            switch (type)
             {
-                command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id` != {playerId}";
+                case 0:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id` != {playerId}";
+                        break;
+                    }
+                case 1:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id}";
+                        break;
+                    }
+                case 2:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id` != {playerId}";
+                        break;
+                    }
+                case 3:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id` != {playerId}";
+                        break;
+                    }
+                case 4:
+                    {
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid`={id} AND `id` != {playerId}";
+                        break;
+                    }
+                default: break;
             }
-                
+
             MySqlDataReader reader = command.ExecuteReader();
             int c = 0;
             while (reader.Read())
@@ -59,9 +299,34 @@ namespace VK_BOT_INSPECTOR
                     keyboard.AddLine();
                     c = 1;
                 }
-                if(type==0)
+                switch (type)
                 {
-                    keyboard.AddButton(new AddButtonParams { Label = $"Застрелить {reader.GetString("id")}", Color = KeyboardButtonColor.Negative });
+                    case 0:
+                        {
+                            keyboard.AddButton(new AddButtonParams { Label = $"Застрелить {reader.GetString("id")}", Color = KeyboardButtonColor.Negative });
+                            break;
+                        }
+                    case 1:
+                        {
+                            keyboard.AddButton(new AddButtonParams { Label = $"Вылечить {reader.GetString("id")}", Color = KeyboardButtonColor.Positive });
+                            break;
+                        }
+                    case 2:
+                        {
+                            keyboard.AddButton(new AddButtonParams { Label = $"Полюбить {reader.GetString("id")}", Color = KeyboardButtonColor.Default });
+                            break;
+                        }
+                    case 3:
+                        {
+                            keyboard.AddButton(new AddButtonParams { Label = $"Проверить {reader.GetString("id")}", Color = KeyboardButtonColor.Primary });
+                            break;
+                        }
+                    case 4:
+                        {
+                            keyboard.AddButton(new AddButtonParams { Label = $"Голосовать {reader.GetString("id")}", Color = KeyboardButtonColor.Primary });
+                            break;
+                        }
+                    default: break;
                 }
             }
             reader.Close();
@@ -80,16 +345,138 @@ namespace VK_BOT_INSPECTOR
                         command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid` = {id} AND `role`='Мафия'";
                         MySqlDataReader reader = command.ExecuteReader();
 
-                        while (reader.Read())
+                        if (reader.HasRows)
                         {
-                            mafiaId = reader.GetInt64("id");
-                        }
-                        reader.Close();
+                            while (reader.Read())
+                            {
+                                mafiaId = reader.GetInt64("id");
+                            }
+                            reader.Close();
 
-                        SendMessage(mafiaId,GetStagePlayers(mafiaId,0,id),GetStageKeyboard(mafiaId,0,id));
+                            SendMessage(mafiaId, GetStagePlayers(mafiaId, 0, id), GetStageKeyboard(mafiaId, 0, id));
+                        }
+                        else
+                        {
+                            reader.Close();
+                            command.CommandText = $"UPDATE `lobbies` SET `stage` = {2} WHERE `id`={id}";
+                            command.ExecuteNonQuery();
+                            UpdateStage(id, 2);
+                        }
 
                         break;
                     };
+                case 2:
+                    {
+                        long doctorId = 0;
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid` = {id} AND `role`='Доктор'";
+                        MySqlDataReader reader = command.ExecuteReader();
+
+                        if (reader.HasRows)
+                        {
+                            while (reader.Read())
+                            {
+                                doctorId = reader.GetInt64("id");
+                            }
+                            reader.Close();
+
+                            SendMessage(doctorId, GetStagePlayers(doctorId, 1, id), GetStageKeyboard(doctorId, 1, id));
+                        }
+                        else
+                        {
+                            reader.Close();
+                            command.CommandText = $"UPDATE `lobbies` SET `stage` = {3} WHERE `id`={id}";
+                            command.ExecuteNonQuery();
+                            UpdateStage(id, 3);
+                        }
+
+                        break;
+                    }
+                case 3:
+                    {
+                        long loveId = 0;
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid` = {id} AND `role`='Любовница'";
+                        MySqlDataReader reader = command.ExecuteReader();
+
+                        if (reader.HasRows)
+                        {
+                            while (reader.Read())
+                            {
+                                loveId = reader.GetInt64("id");
+                            }
+                            reader.Close();
+
+                            SendMessage(loveId, GetStagePlayers(loveId, 2, id), GetStageKeyboard(loveId, 2, id));
+                        }
+                        else
+                        {
+                            reader.Close();
+                            command.CommandText = $"UPDATE `lobbies` SET `stage` = {4} WHERE `id`={id}";
+                            command.ExecuteNonQuery();
+                            UpdateStage(id, 4);
+                        }
+
+                        break;
+                    }
+                case 4:
+                    {
+                        long detectiveId = 0;
+                        command.CommandText = $"SELECT `id` FROM `players` WHERE `lobbyid` = {id} AND `role`='Детектив'";
+                        MySqlDataReader reader = command.ExecuteReader();
+
+                        if (reader.HasRows)
+                        {
+                            while (reader.Read())
+                            {
+                                detectiveId = reader.GetInt64("id");
+                            }
+                            reader.Close();
+
+                            SendMessage(detectiveId, GetStagePlayers(detectiveId, 3, id), GetStageKeyboard(detectiveId, 3, id));
+                        }
+                        else
+                        {
+                            reader.Close();
+                            command.CommandText = $"UPDATE `lobbies` SET `stage` = {5} WHERE `id`={id}";
+                            command.ExecuteNonQuery();
+                            UpdateStage(id, 5);
+                        }
+
+                        break;
+                    }
+                case 5:
+                    {
+                        string NightEndS = NightEnd(id);
+                        long loveId = 0;
+                        List<long> playersIds = new List<long>();
+                        command.CommandText = $"SELECT `id`,`state` FROM `players` WHERE `lobbyid` = {id}";
+                        MySqlDataReader reader = command.ExecuteReader();
+
+                        while (reader.Read())
+                        {
+                            if (reader.GetInt16("state") < 100)
+                            {
+                                playersIds.Add(reader.GetInt64("id"));
+                            }
+                            else
+                            {
+                                loveId = reader.GetInt32("id");
+                            }
+                        }
+                        reader.Close();
+
+                        if (loveId != 0)
+                        {
+                            SendMessage(loveId, NightEndS, null);
+                        }
+
+                        for (int i = 0; i < playersIds.Count; i++)
+                        {
+                            SendMessage(playersIds[i], NightEndS, null);
+                            SendMessage(playersIds[i], GetStagePlayers(playersIds[i], 4, id), GetStageKeyboard(playersIds[i], 4, id));
+                        }
+
+                        break;
+                    }
                 default: break;
             }
         }
@@ -213,26 +600,27 @@ namespace VK_BOT_INSPECTOR
 
         static bool EnterLobby(long? id, string lobby)
         {
-            command.CommandText = $"SELECT `id` FROM `lobbies` WHERE `name` = '{lobby}' AND `stage` = 0 AND `players` < 10";
+            command.CommandText = $"SELECT `id` FROM `lobbies` WHERE `name` = '{lobby}' AND `stage` = 0 AND `players` < 15";
             MySqlDataReader reader = command.ExecuteReader();
 
             if (reader.Read())
             {
                 int lobbyId = reader.GetInt32("id");
                 reader.Close();
-                command.CommandText = $"UPDATE `lobbies` SET `players`=`players`+1 WHERE `name` = '{lobby}';UPDATE `players` SET `lobbyid` = {lobbyId}, `inlobby`=1 WHERE `id` = {id}";
+                command.CommandText = $"UPDATE `lobbies` SET `players`=`players`+1 WHERE `name` = '{lobby}';UPDATE `players` SET `lobbyid` = {lobbyId}, `inlobby`=1, `state`=0, `vote`=0 WHERE `id` = {id}";
                 command.ExecuteNonQuery();
                 return true;
             }
             else
             {
+                reader.Close();
                 return false;
             }
         }
 
         static void CreateLobby(string name, long? id)
         {
-            command.CommandText = $"INSERT INTO `lobbies`(`name`,`players`,`owner`,`stage`) VALUES('{name}', 1, {id},0);SELECT @lobby := MAX(`id`) FROM `lobbies`;UPDATE `players` SET `inlobby`=1,`lobbyid` = @lobby WHERE `id`={id}";
+            command.CommandText = $"INSERT INTO `lobbies`(`name`,`players`,`owner`,`stage`) VALUES('{name}', 1, {id},0);SELECT @lobby := MAX(`id`) FROM `lobbies`;UPDATE `players` SET `inlobby`=1,`lobbyid` = @lobby, `state`=0,`vote`=0 WHERE `id`={id}";
             command.ExecuteNonQuery();
         }
 
@@ -256,7 +644,7 @@ namespace VK_BOT_INSPECTOR
             {
                 if (owner == id)
                 {
-                    command.CommandText = $"UPDATE `players` SET `inlobby`=0,`lobbyid`=0 WHERE `id` = {id};SELECT @newowner := `id` FROM `players` WHERE `inlobby` = 1 AND `lobbyid`={lobby} LIMIT 1;UPDATE `lobbies` SET `owner`=@newowner, `players`=`players`-1 WHERE `id` = {lobby}";
+                    command.CommandText = $"UPDATE `players` SET `inlobby`=0,`lobbyid`=0,`state`=0,`vote`=0 WHERE `id` = {id};SELECT @newowner := `id` FROM `players` WHERE `inlobby` = 1 AND `lobbyid`={lobby} LIMIT 1;UPDATE `lobbies` SET `owner`=@newowner, `players`=`players`-1 WHERE `id` = {lobby}";
                     command.ExecuteNonQuery();
 
                     command.CommandText = $"SELECT `owner` FROM `lobbies` WHERE `id` = {lobby}";
@@ -276,13 +664,13 @@ namespace VK_BOT_INSPECTOR
                 }
                 else
                 {
-                    command.CommandText = $"UPDATE `players` SET `inlobby`=0,`lobbyid`=0 WHERE `id` = {id};UPDATE `lobbies` SET `players`=`players`-1 WHERE `id` = {lobby}";
+                    command.CommandText = $"UPDATE `players` SET `inlobby`=0,`lobbyid`=0,`state`=0,`vote`=0 WHERE `id` = {id};UPDATE `lobbies` SET `players`=`players`-1 WHERE `id` = {lobby}";
                     command.ExecuteNonQuery();
                 }
             }
             else
             {
-                command.CommandText = $"UPDATE `players` SET `inlobby`=0,`lobbyid`=0 WHERE `id` = {id};DELETE FROM `lobbies` WHERE `id` = {lobby}";
+                command.CommandText = $"UPDATE `players` SET `inlobby`=0,`lobbyid`=0,`state`=0,`vote`=0 WHERE `id` = {id};DELETE FROM `lobbies` WHERE `id` = {lobby}";
                 command.ExecuteNonQuery();
             }
         }
@@ -311,22 +699,25 @@ namespace VK_BOT_INSPECTOR
         {
             KeyboardBuilder keyboard = new KeyboardBuilder();
 
-            command.CommandText = $"SELECT `name` FROM `lobbies` WHERE `players`<=10 ORDER BY `players` DESC LIMIT 10";
+            command.CommandText = $"SELECT `name` FROM `lobbies` WHERE `players`<15 AND `stage`=0 ORDER BY `players` DESC LIMIT 10";
             MySqlDataReader reader = command.ExecuteReader();
             int c = 0;
-            while (reader.Read())
+            if (reader.HasRows)
             {
-                c++;
-                if (c == 3)
+                while (reader.Read())
                 {
-                    keyboard.AddLine();
-                    c = 1;
+                    c++;
+                    if (c == 3)
+                    {
+                        keyboard.AddLine();
+                        c = 1;
+                    }
+                    keyboard.AddButton(new AddButtonParams { Label = $"Войти {reader.GetString("name")}", Color = KeyboardButtonColor.Default });
                 }
-                keyboard.AddButton(new AddButtonParams { Label = $"Войти {reader.GetString("name")}", Color = KeyboardButtonColor.Default });
+                keyboard.AddLine();
             }
             reader.Close();
 
-            keyboard.AddLine();
             keyboard.AddButton(new AddButtonParams { Label = "Создать лобби", Color = KeyboardButtonColor.Primary });
 
             keyboard.SetOneTime();
@@ -338,7 +729,7 @@ namespace VK_BOT_INSPECTOR
         {
             string answer = "";
 
-            command.CommandText = $"SELECT * FROM `lobbies` WHERE `players`<10 AND `stage`=0 ORDER BY `players` DESC LIMIT 10";
+            command.CommandText = $"SELECT * FROM `lobbies` WHERE `players`<15 AND `stage`=0 ORDER BY `players` DESC LIMIT 10";
             MySqlDataReader reader = command.ExecuteReader();
 
             if (reader.HasRows)
@@ -352,7 +743,7 @@ namespace VK_BOT_INSPECTOR
 
             while (reader.Read())
             {
-                answer += $"👥 {reader.GetString("name")} {reader.GetInt16("players")}/10 Игроков\n";
+                answer += $"👥 {reader.GetString("name")} {reader.GetInt16("players")}/15 Игроков\n";
             }
             reader.Close();
 
@@ -363,13 +754,41 @@ namespace VK_BOT_INSPECTOR
 
         static void SendMessage(long? id, string message, MessageKeyboard keyboard)
         {
-            api.Messages.Send(new MessagesSendParams
+            try
             {
-                RandomId = rnd.Next(0, 1000000000),
-                PeerId = id,
-                Message = message,
-                Keyboard = keyboard
-            });
+                if (keyboard == null)
+                {
+                    keyboard = new KeyboardBuilder().Clear().Build();
+                }
+                api.Messages.Send(new MessagesSendParams
+                {
+                    RandomId = rnd.Next(0, 1000000000),
+                    PeerId = id,
+                    Message = message,
+                    Keyboard = keyboard
+                });
+            }
+            catch
+            {
+
+            }
+
+        }
+
+        static int GetLobbyPlayersCount(int id)
+        {
+            command.CommandText = $"SELECT `players` FROM `lobbies` WHERE `id`={id}";
+            MySqlDataReader reader = command.ExecuteReader();
+
+            int count = 0;
+
+            while (reader.Read())
+            {
+                count = reader.GetInt16("players");
+            }
+            reader.Close();
+
+            return count;
         }
 
         static Player GetPlayer(long? id)
@@ -386,19 +805,21 @@ namespace VK_BOT_INSPECTOR
                 player.LobbyId = reader.GetInt16("lobbyid");
                 player.Role = reader.GetString("role");
                 player.State = reader.GetInt32("state");
+                player.Vote = reader.GetInt64("vote");
                 reader.Close();
             }
             else
             {
                 reader.Close();
 
-                command.CommandText = $"INSERT INTO `players`(`id`,`inlobby`,`lobbyid`,`role`,`state`) VALUES({id},0,0,'',0)";
+                command.CommandText = $"INSERT INTO `players`(`id`,`inlobby`,`lobbyid`,`role`,`state`,`vote`) VALUES({id},0,0,'',0,0)";
                 command.ExecuteNonQuery();
                 player.Id = id;
                 player.InLobby = false;
                 player.LobbyId = 0;
                 player.Role = "";
                 player.State = 0;
+                player.Vote = 0;
             }
 
             return player;
@@ -442,7 +863,20 @@ namespace VK_BOT_INSPECTOR
                                 }
                                 else if (player.InLobby == true && GetLobbyOwner(player.LobbyId) == player.Id && GetLobbyStage(player.LobbyId) == 0)
                                 {
-                                    StartGame(player.LobbyId);
+                                    if (GetLobbyPlayersCount(player.LobbyId) >= 4)
+                                    {
+                                        StartGame(player.LobbyId);
+                                    }
+                                    else
+                                    {
+                                        KeyboardBuilder keyboard = new KeyboardBuilder();
+                                        keyboard.AddButton(new AddButtonParams { Label = "Начать", Color = KeyboardButtonColor.Positive });
+                                        keyboard.AddLine();
+                                        keyboard.AddButton(new AddButtonParams { Label = "Выйти", Color = KeyboardButtonColor.Negative });
+                                        keyboard.SetOneTime();
+
+                                        SendMessage(player.Id, $"🚫 Нужно минимум 4 игрока", keyboard.Build());
+                                    }
                                 }
 
                                 break;
@@ -522,42 +956,120 @@ namespace VK_BOT_INSPECTOR
                                             string lobby = message.Text.Split(' ')[1].ToUpper();
 
                                             bool enter = EnterLobby(player.Id, lobby);
-                                            if (enter)
+                                            if (player.InLobby == false)
                                             {
-                                                player = GetPlayer(player.Id);
-                                                KeyboardBuilder keyboard = new KeyboardBuilder();
-                                                keyboard.AddButton(new AddButtonParams { Label = "Выйти", Color = KeyboardButtonColor.Negative });
-                                                keyboard.SetOneTime();
+                                                if (enter)
+                                                {
+                                                    player = GetPlayer(player.Id);
+                                                    KeyboardBuilder keyboard = new KeyboardBuilder();
+                                                    keyboard.AddButton(new AddButtonParams { Label = "Выйти", Color = KeyboardButtonColor.Negative });
+                                                    keyboard.SetOneTime();
 
-                                                EnterMessage(player.LobbyId, player.Id, "присоединился к");
-                                                SendMessage(player.Id, $"✅ Вы вошли в лобби {lobby}", keyboard.Build());
+                                                    EnterMessage(player.LobbyId, player.Id, "присоединился к");
+                                                    SendMessage(player.Id, $"✅ Вы вошли в лобби {lobby}", keyboard.Build());
+                                                }
+                                                else
+                                                {
+                                                    KeyboardBuilder keyboard = new KeyboardBuilder();
+                                                    keyboard.AddButton(new AddButtonParams { Label = "Найти лобби", Color = KeyboardButtonColor.Positive });
+                                                    keyboard.AddLine();
+                                                    keyboard.AddButton(new AddButtonParams { Label = "Создать лобби", Color = KeyboardButtonColor.Primary });
+                                                    keyboard.SetOneTime();
+
+                                                    SendMessage(player.Id, $"🚫 Такого лобби нет", keyboard.Build());
+                                                }
                                             }
                                             else
                                             {
                                                 KeyboardBuilder keyboard = new KeyboardBuilder();
-                                                keyboard.AddButton(new AddButtonParams { Label = "Найти лобби", Color = KeyboardButtonColor.Positive });
-                                                keyboard.AddLine();
-                                                keyboard.AddButton(new AddButtonParams { Label = "Создать лобби", Color = KeyboardButtonColor.Primary });
+                                                keyboard.AddButton(new AddButtonParams { Label = "Выйти", Color = KeyboardButtonColor.Negative });
                                                 keyboard.SetOneTime();
 
-                                                SendMessage(player.Id, $"🚫 Такого лобби нет", keyboard.Build());
+                                                SendMessage(player.Id, $"🚫 Вы уже в лобби", keyboard.Build());
                                             }
+
                                             break;
                                         }
                                     case "застрелить":
                                         {
                                             long victimId = Convert.ToInt64(message.Text.Split(' ')[1]);
                                             Player victim = GetPlayer(victimId);
-                                            if (player.Role=="Мафия" || GetLobbyStage(player.LobbyId)==1 || victim.LobbyId == player.LobbyId || victim.Role!="Мафия")
+                                            if (player.Role == "Мафия" && GetLobbyStage(player.LobbyId) == 1 && victim.LobbyId == player.LobbyId && victim.Role != "Мафия")
                                             {
                                                 command.CommandText = $"UPDATE `lobbies` SET `stage`=2 WHERE `id`={player.LobbyId};UPDATE `players` SET `state`=`state`+1 WHERE `id`={victimId}";
                                                 command.ExecuteNonQuery();
 
-                                                SendMessage(player.Id, $"🔫 Вы застрелили @id{victimId} ({GetVkName(victimId)})",null);
+                                                SendMessage(player.Id, $"🔫 Вы застрелили @id{victimId} ({GetVkName(victimId)})", null);
+                                                UpdateStage(player.LobbyId, 2);
                                             }
-                                            else
+                                            break;
+                                        }
+                                    case "вылечить":
+                                        {
+                                            long victimId = Convert.ToInt64(message.Text.Split(' ')[1]);
+                                            Player victim = GetPlayer(victimId);
+                                            if (player.Role == "Доктор" && GetLobbyStage(player.LobbyId) == 2 && victim.LobbyId == player.LobbyId)
                                             {
-                                                UpdateStage(player.LobbyId,1);
+                                                command.CommandText = $"UPDATE `lobbies` SET `stage`=3 WHERE `id`={player.LobbyId};UPDATE `players` SET `state`=`state`+10 WHERE `id`={victimId}";
+                                                command.ExecuteNonQuery();
+
+                                                SendMessage(player.Id, $"💚 Вы вылечили @id{victimId} ({GetVkName(victimId)})", null);
+                                                UpdateStage(player.LobbyId, 3);
+                                            }
+                                            break;
+                                        }
+                                    case "полюбить":
+                                        {
+                                            long victimId = Convert.ToInt64(message.Text.Split(' ')[1]);
+                                            Player victim = GetPlayer(victimId);
+                                            if (player.Role == "Любовница" && GetLobbyStage(player.LobbyId) == 3 && victim.LobbyId == player.LobbyId && victim.Role != "Любовница")
+                                            {
+                                                command.CommandText = $"UPDATE `lobbies` SET `stage`=4 WHERE `id`={player.LobbyId};UPDATE `players` SET `state`=`state`+100 WHERE `id`={victimId}";
+                                                command.ExecuteNonQuery();
+
+                                                SendMessage(player.Id, $"💘 Вы полюбили @id{victimId} ({GetVkName(victimId)})", null);
+                                                UpdateStage(player.LobbyId, 4);
+                                            }
+                                            break;
+                                        }
+                                    case "проверить":
+                                        {
+                                            long victimId = Convert.ToInt64(message.Text.Split(' ')[1]);
+                                            Player victim = GetPlayer(victimId);
+                                            if (player.Role == "Детектив" && GetLobbyStage(player.LobbyId) == 4 && victim.LobbyId == player.LobbyId && victim.Role != "Детектив")
+                                            {
+                                                command.CommandText = $"UPDATE `lobbies` SET `stage`=5 WHERE `id`={player.LobbyId}";
+                                                command.ExecuteNonQuery();
+                                                if (victim.Role != "Мирный житель")
+                                                {
+                                                    SendMessage(player.Id, $"🔎 Вы проверили игрока @id{victimId} ({GetVkName(victimId)}), кажется он что-то скрывает", null);
+                                                }
+                                                else
+                                                {
+                                                    SendMessage(player.Id, $"🔎 Вы проверили игрока @id{victimId} ({GetVkName(victimId)}), он чист", null);
+                                                }
+                                                UpdateStage(player.LobbyId, 5);
+                                            }
+                                            break;
+                                        }
+                                    case "голосовать":
+                                        {
+                                            long victimId = Convert.ToInt64(message.Text.Split(' ')[1]);
+                                            Player victim = GetPlayer(victimId);
+                                            if (player.State < 100 && GetLobbyStage(player.LobbyId) == 5 && victim.LobbyId == player.LobbyId && player.Vote == 0)
+                                            {
+                                                command.CommandText = $"UPDATE `players` SET `vote`={victimId} WHERE `id`={player.Id}";
+                                                command.ExecuteNonQuery();
+                                                SendMessage(player.Id, "💥 Вы успешно проголосовали", null);
+                                                CheckVote(player.LobbyId);
+                                            }
+                                            else if (player.State >= 100)
+                                            {
+                                                SendMessage(player.Id, "💘 Вас полюбили, голосовать нельзя", null);
+                                            }
+                                            else if (player.Vote != 0)
+                                            {
+                                                SendMessage(player.Id, "💥 Вы уже проголосовали", null);
                                             }
                                             break;
                                         }

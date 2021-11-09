@@ -13,8 +13,11 @@ namespace VK_BOT_INSPECTOR
         public bool InLobby { get; set; }
 
         public int LobbyId { get; set; }
+
         public string Role { get; set; }
 
         public int State { get; set; }
+
+        public long Vote { get; set; }
     }
 }
