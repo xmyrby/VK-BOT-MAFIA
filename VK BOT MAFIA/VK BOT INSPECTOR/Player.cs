@@ -18,6 +18,8 @@ namespace VK_BOT_INSPECTOR
 
         public int State { get; set; }
 
+        public int SpecialState { get; set; }
+
         public long Vote { get; set; }
     }
 }

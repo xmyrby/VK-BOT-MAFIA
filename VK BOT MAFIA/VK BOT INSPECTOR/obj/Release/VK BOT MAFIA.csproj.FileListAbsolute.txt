@@ -1,0 +1,26 @@
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\VK BOT INSPECTOR.exe.config
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\VK BOT INSPECTOR.exe
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\VK BOT INSPECTOR.pdb
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\HtmlAgilityPack.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Microsoft.Extensions.DependencyInjection.Abstractions.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Microsoft.Extensions.DependencyInjection.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Microsoft.Extensions.Logging.Abstractions.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\MySql.Data.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Newtonsoft.Json.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\System.Runtime.CompilerServices.Unsafe.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\System.Text.Encoding.CodePages.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\VkNet.dll
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\HtmlAgilityPack.pdb
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\HtmlAgilityPack.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Microsoft.Extensions.DependencyInjection.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Microsoft.Extensions.DependencyInjection.Abstractions.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Microsoft.Extensions.Logging.Abstractions.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\Newtonsoft.Json.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\System.Runtime.CompilerServices.Unsafe.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\System.Text.Encoding.CodePages.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\bin\Release\VkNet.xml
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\obj\Release\VK BOT MAFIA.csproj.AssemblyReference.cache
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\obj\Release\VK BOT MAFIA.csproj.CoreCompileInputs.cache
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\obj\Release\VK BOT MAFIA.csproj.CopyComplete
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\obj\Release\VK BOT INSPECTOR.exe
+C:\Users\XMyRby\source\repos\VK BOT MAFIA\VK BOT INSPECTOR\obj\Release\VK BOT INSPECTOR.pdb
